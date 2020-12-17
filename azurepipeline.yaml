@@ -1,0 +1,101 @@
+#Java 
+#Checkout,Codescan,QualityCheck,Build,UploadArtifacts and Deploy To Webapp
+name: $(build.sourceBranchName)-$(Date:yyyyMMdd)$(Rev:.r)
+trigger:
+  batch: true
+  branches:
+    include:
+    - master
+pr:
+  - master
+variables:
+- group: jpetstore_variable_group
+parameters:
+- name: hcl_app_scan
+  type: boolean
+  default: false
+  values: 
+  - true
+  - false
+
+- name: ignite_testing
+  type: boolean
+  default: false
+  values: 
+  - true
+  - false
+stages:
+- stage: JavaBuildPipeline
+  displayName: Java CI CD Build Pipeline
+  jobs:  
+  - job: JavaBuildPipeline
+    displayName: Java CI CD Build Pipeline
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      displayName: CodeCheckout
+    - task: Maven@3
+      displayName: BuildWithMaven
+      inputs:
+        mavenPomFile: 'pom.xml'
+        mavenOptions: '-Xmx3072m'
+        javaHomeOption: 'JDKVersion'
+        mavenVersionOption: 'Default'
+        mavenAuthenticateFeed: false
+        effectivePomSkip: false
+        sonarQubeRunAnalysis: false
+        publishJUnitResults: true
+        testResultsFiles: '**/surefire-reports/TEST-*.xml' 
+    #HCL APP SCAN
+    - task: HCLAppScan@1
+      condition: ${{ parameters.hcl_app_scan}}
+      inputs:
+        AppSecTestService: 'hcl_appscan'
+        applications: '07cd53c8-1714-426c-9441-53eec872f01c'
+        scanname: 'hcl_app_scan'
+        scantype: 'static'
+        scanloc: '/home/vsts/work/1/s'
+        ScanSpeedOptions: 'simple'
+    # IBM Ignite Testing for quality and test
+    - task: PowerShell@2
+      condition: ${{ parameters.ignite_testing}}
+      displayName: 'IBM Ignite Quality and Testing'
+      inputs:
+        targetType: filePath
+        filePath: './ignite_test_script.ps1'   
+#    - task: UniversalPackages@0
+#      inputs:
+#        command: 'publish'
+#        publishDirectory: '/home/vsts/work/1/s/target/jpetstore.war'
+#        feedsToUsePublish: 'internal'
+#        vstsFeedPublish: '8771f6eb-0631-4b2c-b355-e2ad3eace375/6064a316-e6f7-4965-83a4-c76d621d325f'
+#        vstsFeedPackagePublish: 'jpetstore'
+#        versionOption: 'patch'
+
+#    - task: SonarQubePrepare@4
+#      displayName: SonarqubeInitial
+#      inputs:
+#        SonarQube: $(sonarServiceConnection)
+#        scannerMode: 'CLI'
+#        configMode: 'manual'
+#        cliProjectKey: $(sonarProjectKey)
+#        cliProjectName: $(sonarProjectName)
+#        cliSources: $(sonarSources)
+#        extraProperties: |
+#          sonar.java.source=$(sonarJavaSource)
+#          sonar.java.binaries=$(sonarJavaBinaries)
+#
+#    - task: SonarQubeAnalyze@4
+#      displayName: SonarAnalysis
+#
+#    - task: SonarQubePublish@4
+#      inputs:
+#        pollingTimeoutSec: '300'
+
+    - task: Docker@2
+      inputs:
+        containerRegistry: 'petstore'
+        repository: 'petstorerepo'
+        command: 'buildAndPush'
+        Dockerfile: '**/Dockerfile'
